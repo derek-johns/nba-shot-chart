@@ -1,19 +1,58 @@
 import streamlit as st
-import pandas as pd
-import base64
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 from matplotlib.patches import Circle, Rectangle, Arc
-from matplotlib.offsetbox import TextArea, DrawingArea, OffsetImage, AnnotationBbox
 from nba_api.stats.endpoints import shotchartdetail
-from IPython.display import Image
-from PIL import Image
+from nba_api.stats.endpoints.leaguestandings import LeagueStandings
+from nba_api.stats.endpoints.commonteamroster import CommonTeamRoster
+from nba_api.stats.static.teams import find_teams_by_full_name
+from nba_api.stats.static.players import find_players_by_full_name
+from nba_api.stats.library.parameters import SeasonType, ContextMeasureDetailed
 import seaborn as sns
-import numpy as np
-import json
+
+st.title('NBA Shot Chart Visualization')
+
+st.markdown("""
+This app produces a visualization of NBA player shots for the specified season. Only includes regular season.
+* **Data Source:** [nba-api](https://github.com/swar/nba_api)
+""")
+
+st.sidebar.header('User Input')
+
+# Year input
+year_arr = [str(f'{i}-{str((i + 1))[-2:]}') for i in reversed(range(1950, 2021))]
+selected_year = st.sidebar.selectbox('Year', year_arr)
 
 
+# Team input
+def get_teams_by_year(year):
+    df = LeagueStandings(season=year).get_data_frames()[0]
+    return list(map(' '.join, zip(df['TeamCity'], df['TeamName'])))
+
+
+selected_team = st.sidebar.selectbox('Team', sorted(get_teams_by_year(str(selected_year))))
+
+
+# Player input
+def get_players_by_team(team_name):
+    team_id = find_teams_by_full_name(team_name)[0]['id']
+    team_df = CommonTeamRoster(season=selected_year, team_id=team_id).get_data_frames()[0]
+    return list(team_df['PLAYER'])
+
+
+selected_player = st.sidebar.selectbox('Player', sorted(get_players_by_team(selected_team)))
+
+# Shot Chart setup
+shot_df = shotchartdetail.ShotChartDetail(team_id=find_teams_by_full_name(selected_team)[0]['id'],
+                                          player_id=find_players_by_full_name(selected_player)[0]['id'],
+                                          context_measure_simple=ContextMeasureDetailed.fga,
+                                          season_nullable=str(selected_year),
+                                          season_type_all_star=SeasonType.regular,
+                                          ).get_data_frames()[0]
+made_shot_df = shot_df[shot_df['SHOT_MADE_FLAG'] == 1]
+missed_shot_df = shot_df[shot_df['SHOT_MADE_FLAG'] == 0]
+
+
+# Court setup
 def draw_court(ax=None, color='black', lw=2, outer_lines=False):
     # Use current axis if none provided
     if ax is None:
@@ -91,24 +130,19 @@ def draw_court(ax=None, color='black', lw=2, outer_lines=False):
     for element in court_elements:
         ax.add_patch(element)
 
-    #     ax.add_artist(AnnotationBbox(OffsetImage(get_player_img(get_player_id('Joel', 'Embiid')) ),
-    #                                 (500, 400),
-    #                                 frameon=False))
-
-    #     get_player_img(get_player_id('Joel', 'Embiid'))
-
     return ax
 
 
+# Draw Shot Chart
+with sns.axes_style('white'):
+    f, ax = plt.subplots(figsize=(8, 7))
+    draw_court(ax=ax, outer_lines=True, color='black')
+    sns.scatterplot(x='LOC_X', y='LOC_Y', data=missed_shot_df, color='red')
+    sns.scatterplot(x='LOC_X', y='LOC_Y', data=made_shot_df, color='green')
+    plt.xlim(-300, 300)
+    plt.ylim(-100, 500)
+    ax.axes.xaxis.set_visible(False)
+    ax.axes.yaxis.set_visible(False)
+st.set_option('deprecation.showPyplotGlobalUse', False)
+st.pyplot()
 
-
-
-
-plt.figure(figsize=(8, 7))
-draw_court(outer_lines=True, color='black')
-# sns.scatterplot(x='LOC_X', y='LOC_Y', data=missed_shot_df, color='red')
-# sns.scatterplot(x='LOC_X', y='LOC_Y', data=made_shot_df, color='green')
-# get_player_img(get_player_id('Joel', 'Embiid'))
-plt.xlim(-300, 300)
-plt.ylim(-100, 500)
-plt.show()
