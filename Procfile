@@ -1,1 +1,1 @@
-web: sh setup.sh && streamlit run bball_app.py
+web: sh setup.sh && streamlit run shot-chart-app.py
